@@ -37,6 +37,7 @@ ComBat_seq <- function(counts, batch, group=NULL, covar_mod=NULL, full_mod=TRUE,
                        shrink=FALSE, shrink.disp=FALSE, gene.subset.n=NULL){  
   ########  Preparation  ########  
   ## Does not support 1 sample per batch yet
+  ### MS: batch is an array where each element describes the batch level of the corresponding sample
   batch <- as.factor(batch)
   if(any(table(batch)<=1)){
     stop("ComBat-seq doesn't support 1 sample per batch yet")
@@ -64,8 +65,10 @@ ComBat_seq <- function(counts, batch, group=NULL, covar_mod=NULL, full_mod=TRUE,
   
   ## Make design matrix 
   # batch
+  ## MS: Create batch design matrix: X = | level1 | level2 | ... |
   batchmod <- model.matrix(~-1+batch)  # colnames: levels(batch)
   # covariate
+  ## MS: Creates covariate design matrix: Indicates biological covariates (can also be supplied with covar_mod)
   group <- as.factor(group)
   if(full_mod & nlevels(group)>1){
     cat("Using full model in ComBat-seq.\n")
@@ -81,12 +84,15 @@ ComBat_seq <- function(counts, batch, group=NULL, covar_mod=NULL, full_mod=TRUE,
     }
     covar_mod <- covar_mod[, !apply(covar_mod, 2, function(x){all(x==1)})]
   }
+  
+  ## MS: create final design matrix = concat(batch design matrix, covariate design matrix)
   # bind with biological condition of interest
   mod <- cbind(mod, covar_mod)
   # combine
   design <- cbind(batchmod, mod)
   
   ## Check for intercept in covariates, and drop if present
+  ## MS: NOT SURE WHY INTERCEPT IS DROPPED?
   check <- apply(design, 2, function(x) all(x == 1))
   #if(!is.null(ref)){check[ref]=FALSE} ## except don't throw away the reference batch indicator
   design <- as.matrix(design[,!check])
