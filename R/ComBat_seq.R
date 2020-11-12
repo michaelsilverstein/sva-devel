@@ -34,7 +34,8 @@
 #' 
 
 ComBat_seq <- function(counts, batch, group=NULL, covar_mod=NULL, full_mod=TRUE, 
-                       shrink=FALSE, shrink.disp=FALSE, gene.subset.n=NULL){  
+                       shrink=FALSE, shrink.disp=FALSE, gene.subset.n=NULL,
+                       ref.batch=NULL){  
   ########  Preparation  ########  
   ## Does not support 1 sample per batch yet
   ### MS: batch is an array where each element describes the batch level of the corresponding sample
@@ -53,6 +54,7 @@ ComBat_seq <- function(counts, batch, group=NULL, covar_mod=NULL, full_mod=TRUE,
   counts <- counts[keep, ]
   
   # require bioconductor 3.7, edgeR 3.22.1
+  # MS: Object for storing data (DGE=Digital Gene Expression)
   dge_obj <- DGEList(counts=counts)
   
   ## Prepare characteristics on batches
@@ -67,6 +69,22 @@ ComBat_seq <- function(counts, batch, group=NULL, covar_mod=NULL, full_mod=TRUE,
   # batch
   ## MS: Create batch design matrix: X = | level1 | level2 | ... |
   batchmod <- model.matrix(~-1+batch)  # colnames: levels(batch)
+  
+  ####### MS: HERE IS WHERE REFRENCE BATCH CAN BE INDICATED
+  ### https://github.com/jtleek/sva-devel/blob/123be9b2b9fd7c7cd495fab7d7d901767964ce9e/R/ComBat.R#L87-L88
+  # if (!is.null(ref.batch)){
+  #   ## check for reference batch, check value, and make appropriate changes
+  #   if (!(ref.batch%in%levels(batch))) {
+  #     stop("reference level ref.batch is not one of the levels of the batch variable")
+  #   }
+  #   message("Using batch =",ref.batch, "as a reference batch (this batch won't change)")
+  #   ref <- which(levels(as.factor(batch))==ref.batch) # find the reference
+  #   batchmod[,ref] <- 1
+  # } else {
+  #   ref <- NULL
+  # }
+  ### The "n_batches" part above will have to be moved to follow the ref batch check
+  
   # covariate
   ## MS: Creates covariate design matrix: Indicates biological covariates (can also be supplied with covar_mod)
   group <- as.factor(group)
@@ -99,6 +117,8 @@ ComBat_seq <- function(counts, batch, group=NULL, covar_mod=NULL, full_mod=TRUE,
   cat("Adjusting for",ncol(design)-ncol(batchmod),'covariate(s) or covariate level(s)\n')
   
   ## Check if the design is confounded
+  ## MS: Check for various ways design matrix could be confounded (linear algebra)
+  # qr = QR decomposition, only used to get matrix rank
   if(qr(design)$rank<ncol(design)){
     #if(ncol(design)<=(n_batch)){stop("Batch variables are redundant! Remove one or more of the batch variables so they are no longer confounded")}
     if(ncol(design)==(n_batch+1)){stop("The covariate is confounded with batch! Remove the covariate and rerun ComBat-Seq")}
@@ -115,6 +135,7 @@ ComBat_seq <- function(counts, batch, group=NULL, covar_mod=NULL, full_mod=TRUE,
   ########  Estimate gene-wise dispersions within each batch  ########
   cat("Estimating dispersions\n")
   ## Estimate common dispersion within each batch as an initial value
+  ## MS: Is this phi? Dim(disp_common) = # of batches
   disp_common <- sapply(1:n_batch, function(i){
     if((n_batches[i] <= ncol(design)-ncol(batchmod)+1) | qr(mod[batches_ind[[i]], ])$rank < ncol(mod)){ 
       # not enough residual degree of freedom
@@ -125,6 +146,8 @@ ComBat_seq <- function(counts, batch, group=NULL, covar_mod=NULL, full_mod=TRUE,
   })
   
   ## Estimate gene-wise dispersion within each batch 
+  ## MS: Compute genewise dispersion using "Emprical Bayes Tagwise Dispersion"??
+  # Returns a matrix that is [batches X genes], is this mu_gj?
   genewise_disp_lst <- lapply(1:n_batch, function(j){
     if((n_batches[j] <= ncol(design)-ncol(batchmod)+1) | qr(mod[batches_ind[[j]], ])$rank < ncol(mod)){
       # not enough residual degrees of freedom - use the common dispersion
@@ -137,13 +160,16 @@ ComBat_seq <- function(counts, batch, group=NULL, covar_mod=NULL, full_mod=TRUE,
   names(genewise_disp_lst) <- paste0('batch', levels(batch))
   
   ## construct dispersion matrix
+  ## MS: vec2mat from helper_seq.R. Creates #genes X #samples.
+  ## WHY IS THIS PHI?? Isn't Phi for each gene in each BATCH (not sample?)
   phi_matrix <- matrix(NA, nrow=nrow(counts), ncol=ncol(counts))
   for(k in 1:n_batch){
     phi_matrix[, batches_ind[[k]]] <- vec2mat(genewise_disp_lst[[k]], n_batches[k]) 
   }
   
-    
+  
   ########  Estimate parameters from NB GLM  ########
+  ## MS: use gene-wise dispersion to fit NG model to estimate gamma, mu, and phi
   cat("Fitting the GLM model\n")
   glm_f <- glmFit(dge_obj, design=design, dispersion=phi_matrix, prior.count=1e-4) #no intercept - nonEstimable; compute offset (library sizes) within function
   alpha_g <- glm_f$coefficients[, 1:n_batch] %*% as.matrix(n_batches/n_sample) #compute intercept as batch-size-weighted average from batches
@@ -151,12 +177,15 @@ ComBat_seq <- function(counts, batch, group=NULL, covar_mod=NULL, full_mod=TRUE,
     vec2mat(alpha_g, ncol(counts))  # new offset - gene background expression # getOffset(dge_obj) is the same as log(dge_obj$samples$lib.size)
   glm_f2 <- glmFit.default(dge_obj$counts, design=design, dispersion=phi_matrix, offset=new_offset, prior.count=1e-4) 
   
+  # MS: Ok, these are the dimensions I expected from the paper:
+  # gamma and phi_hat = #genes X # batches; mu = #genes X # samples
   gamma_hat <- glm_f2$coefficients[, 1:n_batch]
   mu_hat <- glm_f2$fitted.values
   phi_hat <- do.call(cbind, genewise_disp_lst)
   
   
   ########  In each batch, compute posterior estimation through Monte-Carlo integration  ########  
+  ## MS: I skipped shrinkage
   if(shrink){
     cat("Apply shrinkage - computing posterior estimates for parameters\n")
     mcint_fun <- monte_carlo_int_NB
@@ -183,12 +212,16 @@ ComBat_seq <- function(counts, batch, group=NULL, covar_mod=NULL, full_mod=TRUE,
     }
   }else{
     cat("Shrinkage off - using GLM estimates for parameters\n")
+    ## MS: Both #genes X #levels - without shrinkage these are same as before
     gamma_star_mat <- gamma_hat
     phi_star_mat <- phi_hat
   }
   
   
   ########  Obtain adjusted batch-free distribution  ########
+  ## MS: mu_star: subtract gamma (effect per gene in each level) from mu to get 
+  # batch-free mu
+  # phi_star: estimate dipsersion for each gene by taking the mean over all batches
   mu_star <- matrix(NA, nrow=nrow(counts), ncol=ncol(counts))
   for(jj in 1:n_batch){
     mu_star[, batches_ind[[jj]]] <- exp(log(mu_hat[, batches_ind[[jj]]])-vec2mat(gamma_star_mat[, jj], n_batches[jj]))
@@ -197,6 +230,7 @@ ComBat_seq <- function(counts, batch, group=NULL, covar_mod=NULL, full_mod=TRUE,
   
   
   ########  Adjust the data  ########  
+  ## MS: use parameters to adjust by matching quantiles
   cat("Adjusting the data\n")
   adjust_counts <- matrix(NA, nrow=nrow(counts), ncol=ncol(counts))
   for(kk in 1:n_batch){
