@@ -34,7 +34,8 @@
 #' 
 
 ComBat_seq <- function(counts, batch, group=NULL, covar_mod=NULL, full_mod=TRUE, 
-                       shrink=FALSE, shrink.disp=FALSE, gene.subset.n=NULL){  
+                       shrink=FALSE, shrink.disp=FALSE, gene.subset.n=NULL,
+                       ref.batch=NULL){  
   ########  Preparation  ########  
   ## Does not support 1 sample per batch yet
   batch <- as.factor(batch)
@@ -65,6 +66,18 @@ ComBat_seq <- function(counts, batch, group=NULL, covar_mod=NULL, full_mod=TRUE,
   ## Make design matrix 
   # batch
   batchmod <- model.matrix(~-1+batch)  # colnames: levels(batch)
+  ## REFERENCE BATCH IMPLEMENTATION
+  if (!is.null(ref.batch)){
+    ## check for reference batch, check value, and make appropriate changes
+    if (!(ref.batch%in%levels(batch))) {
+      stop("reference level ref.batch is not one of the levels of the batch variable")
+    }
+    message("Using batch =",ref.batch, " as a reference batch (this batch won't change)")
+    ref <- which(levels(as.factor(batch))==ref.batch) # find the reference
+    batchmod[,ref] <- 1
+  } else {
+    ref <- NULL
+  }
   # covariate
   group <- as.factor(group)
   if(full_mod & nlevels(group)>1){
@@ -85,6 +98,12 @@ ComBat_seq <- function(counts, batch, group=NULL, covar_mod=NULL, full_mod=TRUE,
   mod <- cbind(mod, covar_mod)
   # combine
   design <- cbind(batchmod, mod)
+  
+  ## check for intercept in covariates, and drop if present
+  check <- apply(design, 2, function(x) all(x == 1))
+  if(!is.null(ref)){
+    check[ref] <- FALSE
+  } ## except don't throw away the reference batch indicator
   
   ## Check for intercept in covariates, and drop if present
   check <- apply(design, 2, function(x) all(x == 1))
