@@ -1,3 +1,4 @@
+library('tidyverse')
 # Load counts
 counts <- read.csv('~/Boston_University/Challenge_Project/3_levels.csv')
 counts <- data.matrix(counts[2:ncol(counts)])
