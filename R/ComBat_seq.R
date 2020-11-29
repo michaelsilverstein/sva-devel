@@ -38,14 +38,20 @@ ComBat_seq <- function(counts, batch, group=NULL, covar_mod=NULL, full_mod=TRUE,
   ########  Preparation  ########  
   ## Does not support 1 sample per batch yet
   batch <- as.factor(batch)
-  if(any(table(batch)<=1)){
+  if(any(table(batch)=0)){
     stop("ComBat-seq doesn't support 1 sample per batch yet")
   }
   
   ## Remove genes with only 0 counts in any batch
-  keep_lst <- lapply(levels(batch), function(b){
-    which(apply(counts[, batch==b], 1, function(x){!all(x==0)}))
-  })
+  if (length(levels(batch)) == length(batch)) {
+    keep_lst <- lapply(levels(batch), function(b){
+      which(apply(matrix(counts[, batch==b]), 1, function(x){!all(x==0)}))
+    })
+  } else {
+      keep_lst <- lapply(levels(batch), function(b){
+        which(apply(counts[, batch==b], 1, function(x){!all(x==0)}))
+      })
+  }
   keep <- Reduce(intersect, keep_lst)
   rm <- setdiff(1:nrow(counts), keep)
   countsOri <- counts
