@@ -34,24 +34,27 @@
 #' 
 
 ComBat_seq <- function(counts, batch, group=NULL, covar_mod=NULL, full_mod=TRUE, 
-                       shrink=FALSE, shrink.disp=FALSE, gene.subset.n=NULL){  
+                       shrink=FALSE, shrink.disp=FALSE, gene.subset.n=NULL, continuous.batch=FALSE){  
   ########  Preparation  ########  
   ## Does not support 1 sample per batch yet
-  batch <- as.factor(batch)
-  if(any(table(batch)=0)){
+  if (continuous.batch==FALSE) {
+    batch <- as.factor(batch)
+  } else {
+    batch <- batch
+  }
+  if(any(table(batch)<=1)){
     stop("ComBat-seq doesn't support 1 sample per batch yet")
   }
   
   ## Remove genes with only 0 counts in any batch
-  if (length(levels(batch)) == length(batch)) {
-    keep_lst <- lapply(levels(batch), function(b){
-      which(apply(matrix(counts[, batch==b]), 1, function(x){!all(x==0)}))
-    })
+  if (continuous.batch==FALSE) {
+    n_levels <- levels(batch)
   } else {
-      keep_lst <- lapply(levels(batch), function(b){
-        which(apply(counts[, batch==b], 1, function(x){!all(x==0)}))
-      })
+    n_levels <- 1
   }
+  keep_lst <- lapply(n_levels, function(b){
+    which(apply(counts[, batch==b], 1, function(x){!all(x==0)}))
+  })
   keep <- Reduce(intersect, keep_lst)
   rm <- setdiff(1:nrow(counts), keep)
   countsOri <- counts
@@ -61,12 +64,26 @@ ComBat_seq <- function(counts, batch, group=NULL, covar_mod=NULL, full_mod=TRUE,
   dge_obj <- DGEList(counts=counts)
   
   ## Prepare characteristics on batches
-  n_batch <- nlevels(batch)  # number of batches
-  batches_ind <- lapply(1:n_batch, function(i){which(batch==levels(batch)[i])}) # list of samples in each batch  
-  n_batches <- sapply(batches_ind, length)
-  #if(any(n_batches==1)){mean_only=TRUE; cat("Note: one batch has only one sample, setting mean.only=TRUE\n")}
-  n_sample <- sum(n_batches)
-  cat("Found",n_batch,'batches\n')
+  if (continuous.batch==FALSE) {
+    n_batch <- nlevels(batch)  # number of batches
+    batches_ind <- lapply(1:n_batch, function(i){which(batch==levels(batch)[i])}) # list of samples in each batch  
+    n_batches <- sapply(batches_ind, length)
+    #if(any(n_batches==1)){mean_only=TRUE; cat("Note: one batch has only one sample, setting mean.only=TRUE\n")}
+    n_sample <- sum(n_batches)
+    cat("Found",n_batch,'batches\n')
+  } else {
+    n_batch <- 1  # number of batches
+    batches_ind <- list(1:ncol(counts)) # list of samples in the batch  
+    n_batches <- sapply(batches_ind, length)
+    n_sample <- sum(n_batches)
+    cat("Found",n_batch,'batches\n')
+  }
+  # n_batch <- nlevels(batch)  # number of batches
+  # batches_ind <- lapply(1:n_batch, function(i){which(batch==levels(batch)[i])}) # list of samples in each batch  
+  # n_batches <- sapply(batches_ind, length)
+  # #if(any(n_batches==1)){mean_only=TRUE; cat("Note: one batch has only one sample, setting mean.only=TRUE\n")}
+  # n_sample <- sum(n_batches)
+  # cat("Found",n_batch,'batches\n')
   
   ## Make design matrix 
   # batch
