@@ -11,7 +11,7 @@
 #' @param shrink Boolean, whether to apply shrinkage on parameter estimation
 #' @param shrink.disp Boolean, whether to apply shrinkage on dispersion
 #' @param gene.subset.n Number of genes to use in empirical Bayes estimation, only useful when shrink = TRUE
-#' 
+#' @param ref.batch Reference batch
 #' @return data A gene x sample count matrix, adjusted for batch effects.
 #' 
 #' @importFrom edgeR DGEList estimateGLMCommonDisp estimateGLMTagwiseDisp glmFit glmFit.default getOffset
@@ -105,9 +105,6 @@ ComBat_seq <- function(counts, batch, group=NULL, covar_mod=NULL, full_mod=TRUE,
     check[ref] <- FALSE
   } ## except don't throw away the reference batch indicator
   
-  ## Check for intercept in covariates, and drop if present
-  check <- apply(design, 2, function(x) all(x == 1))
-  #if(!is.null(ref)){check[ref]=FALSE} ## except don't throw away the reference batch indicator
   design <- as.matrix(design[,!check])
   cat("Adjusting for",ncol(design)-ncol(batchmod),'covariate(s) or covariate level(s)\n')
   
@@ -204,9 +201,21 @@ ComBat_seq <- function(counts, batch, group=NULL, covar_mod=NULL, full_mod=TRUE,
   ########  Obtain adjusted batch-free distribution  ########
   mu_star <- matrix(NA, nrow=nrow(counts), ncol=ncol(counts))
   for(jj in 1:n_batch){
-    mu_star[, batches_ind[[jj]]] <- exp(log(mu_hat[, batches_ind[[jj]]])-vec2mat(gamma_star_mat[, jj], n_batches[jj]))
+# Reference mode: Add reference batch gamma back
+    if(!is.null(ref)){
+      mu_star[, batches_ind[[jj]]] <- exp(log(mu_hat[, batches_ind[[jj]]])-vec2mat(gamma_star_mat[, jj], n_batches[jj]) + vec2mat(gamma_star_mat[, ref], n_batches[ref]))
+    }
+    else{
+      mu_star[, batches_ind[[jj]]] <- exp(log(mu_hat[, batches_ind[[jj]]])-vec2mat(gamma_star_mat[, jj], n_batches[jj]))
+    }
   }
-  phi_star <- rowMeans(phi_star_mat)
+  if(!is.null(ref)){
+    ## CHECK!
+    phi_star <- phi_star_mat[ref,]
+  }
+  else{
+    phi_star <- rowMeans(phi_star_mat)
+  }
   
   
   ########  Adjust the data  ########  
