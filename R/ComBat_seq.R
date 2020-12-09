@@ -4,13 +4,14 @@
 #' which specifically targets RNA-Seq count data.
 #' 
 #' @param counts Raw count matrix from genomic studies (dimensions gene x sample) 
-#' @param batch Vector / factor for batch
+#' @param batch Vector / factor for batch, needs to be continuous if continuous.batch = TRUE
 #' @param group Vector / factor for biological condition of interest 
 #' @param covar_mod Model matrix for multiple covariates to include in linear model (signals from these variables are kept in data after adjustment) 
 #' @param full_mod Boolean, if TRUE include condition of interest in model
 #' @param shrink Boolean, whether to apply shrinkage on parameter estimation
 #' @param shrink.disp Boolean, whether to apply shrinkage on dispersion
 #' @param gene.subset.n Number of genes to use in empirical Bayes estimation, only useful when shrink = TRUE
+#' @param continuous.batch Boolean, whether batch variable is continuous
 #' 
 #' @return data A gene x sample count matrix, adjusted for batch effects.
 #' 
@@ -40,11 +41,11 @@ ComBat_seq <- function(counts, batch, group=NULL, covar_mod=NULL, full_mod=TRUE,
   if (continuous.batch==FALSE) {
     batch <- as.factor(batch)
   } else {
-    batch <- batch
+    batch <- as.numeric(batch) 
   }
-  if(any(table(batch)<=1)){
-    stop("ComBat-seq doesn't support 1 sample per batch yet")
-  }
+  # if(any(table(batch)<=1)){
+  #   stop("ComBat-seq doesn't support 1 sample per batch yet")
+  # }
   
   ## Remove genes with only 0 counts in any batch
   if (continuous.batch==FALSE) {
@@ -67,23 +68,15 @@ ComBat_seq <- function(counts, batch, group=NULL, covar_mod=NULL, full_mod=TRUE,
   if (continuous.batch==FALSE) {
     n_batch <- nlevels(batch)  # number of batches
     batches_ind <- lapply(1:n_batch, function(i){which(batch==levels(batch)[i])}) # list of samples in each batch  
-    n_batches <- sapply(batches_ind, length)
-    #if(any(n_batches==1)){mean_only=TRUE; cat("Note: one batch has only one sample, setting mean.only=TRUE\n")}
-    n_sample <- sum(n_batches)
     cat("Found",n_batch,'batches\n')
   } else {
     n_batch <- 1  # number of batches
     batches_ind <- list(1:ncol(counts)) # list of samples in the batch  
-    n_batches <- sapply(batches_ind, length)
-    n_sample <- sum(n_batches)
-    cat("Found",n_batch,'batches\n')
+    cat("Found",n_batch,'batch\n')
   }
-  # n_batch <- nlevels(batch)  # number of batches
-  # batches_ind <- lapply(1:n_batch, function(i){which(batch==levels(batch)[i])}) # list of samples in each batch  
-  # n_batches <- sapply(batches_ind, length)
-  # #if(any(n_batches==1)){mean_only=TRUE; cat("Note: one batch has only one sample, setting mean.only=TRUE\n")}
-  # n_sample <- sum(n_batches)
-  # cat("Found",n_batch,'batches\n')
+  
+  n_batches <- sapply(batches_ind, length)
+  n_sample <- sum(n_batches)
   
   ## Make design matrix 
   # batch
