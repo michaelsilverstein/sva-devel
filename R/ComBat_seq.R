@@ -50,24 +50,13 @@ ComBat_seq <- function(counts, batch, group=NULL, covar_mod=NULL, full_mod=TRUE,
   ## Remove genes with only 0 counts in any batch
   if (continuous.batch==FALSE) {
     n_levels <- levels(batch)
+    keep_lst <- lapply(n_levels, function(b){
+      which(apply(counts[, batch==b], 1, function(x){!all(x==0)}))
+    })
   } else {
     n_levels <- 1
+    keep_lst <- list(which(apply(counts,1, function(x){!all(x==0)})))
   }
-  # continuous.batch == FALSE
-  keep_lst <- lapply(n_levels, function(b){
-    which(apply(counts[, batch==b], 1, function(x){!all(x==0)}))
-  })
-  # continuous.batch == TRUE
-  keep_lst <- lapply(length(batch), function(b){
-    which(sapply(counts[, batch==b], function(x){!all(x==0)}))
-  })
-  
-  has_value <- nrow(counts)
-  keep_lst <- lapply(length(batch), function(b){
-    rows_with_values <- which(sapply(counts[c(has_value), batch==b], function(x){!all(x==0)}))
-    has_value <- rows_with_values
-  })
-  
   keep <- Reduce(intersect, keep_lst)
   rm <- setdiff(1:nrow(counts), keep)
   countsOri <- counts
@@ -119,6 +108,9 @@ ComBat_seq <- function(counts, batch, group=NULL, covar_mod=NULL, full_mod=TRUE,
   #if(!is.null(ref)){check[ref]=FALSE} ## except don't throw away the reference batch indicator
   design <- as.matrix(design[,!check])
   cat("Adjusting for",ncol(design)-ncol(batchmod),'covariate(s) or covariate level(s)\n')
+  if (continuous.batch == TRUE) {
+    design <- cbind(design,1) # Add intercept back to continuous
+  }
   
   ## Check if the design is confounded
   if(qr(design)$rank<ncol(design)){
@@ -212,11 +204,16 @@ ComBat_seq <- function(counts, batch, group=NULL, covar_mod=NULL, full_mod=TRUE,
   
   ########  Obtain adjusted batch-free distribution  ########
   mu_star <- matrix(NA, nrow=nrow(counts), ncol=ncol(counts))
-  for(jj in 1:n_batch){
-    mu_star[, batches_ind[[jj]]] <- exp(log(mu_hat[, batches_ind[[jj]]])-vec2mat(gamma_star_mat[, jj], n_batches[jj]))
+  if (continuous.batch == FALSE) {
+    for(jj in 1:n_batch){
+      mu_star[, batches_ind[[jj]]] <- exp(log(mu_hat[, batches_ind[[jj]]])-vec2mat(gamma_star_mat[, jj], n_batches[jj]))
+    }
+  }else{
+    for(jj in 1:n_batch){
+      mu_star[, batches_ind[[jj]]] <- exp(log(mu_hat[, batches_ind[[jj]]])-vec2mat(gamma_star_mat[], n_batches[jj]))
+    }
   }
   phi_star <- rowMeans(phi_star_mat)
-  
   
   ########  Adjust the data  ########  
   cat("Adjusting the data\n")
